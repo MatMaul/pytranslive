@@ -80,7 +80,6 @@ class Transcoder(object):
         # here we should autodectect hw capabilities:
         # - availability of hw decoders and encoders
         # - availability of hw filtering/overlay capabilities for subtitles and scaling
-
         
         self.encoders = {}
         self.encoders["h264"] = ["libx264"]
@@ -93,7 +92,10 @@ class Transcoder(object):
         self.hwaccel_type = hwaccel_type
         self.hwaccel_device = hwaccel_device
 
-        self.scaler = "scale"
+        self.hw_scalers = {
+            "vaapi": "scale_vaapi",
+        }
+
         # self.tone_mapper = "opencl"
 
     def transcode(self, input_url, output_dir, output_filename="stream.m3u8", options=TranscodeOptions()):
@@ -148,8 +150,10 @@ class Transcoder(object):
     def get_hwaccel_params(self, options):
         params = []
         if self.hwaccel_type:
+            init_hw_device = self.hwaccel_type + "=" + self.hwaccel_type
             if self.hwaccel_device:
-                params += ["-init_hw_device", self.hwaccel_type + "=" + self.hwaccel_type + ":" + self.hwaccel_device]
+                init_hw_device += ":" + self.hwaccel_device
+            params += ["-init_hw_device", init_hw_device]
             params += ["-hwaccel", self.hwaccel_type, "-hwaccel_output_format", self.hwaccel_type, "-hwaccel_device", self.hwaccel_type, "-filter_hw_device", self.hwaccel_type]
         return params
 
@@ -196,5 +200,9 @@ class Transcoder(object):
             width = -2
         if not height and width > 0:
             height = -2
+
+        scaler = "scaler"
+        if self.hwaccel_type in self.hw_scalers:
+            scaler = self.hw_scalers[self.hwaccel_type]
         
-        return self.scaler + "=" + str(width) + ":" + str(height)
+        return scaler + "=" + str(width) + ":" + str(height)
