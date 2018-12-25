@@ -83,6 +83,8 @@ class TranscodeOptions(object):
 
         self.format = "hls"
 
+        self.container = None
+
         # this assumes that track 0 & 1 are the one transcoded
         # you can use ffprobe to know the track numbers and specify here at most 3 tracks,
         # one for each stream type (video, audio, subtitles)
@@ -157,8 +159,19 @@ class Transcoder(object):
         return ["-max_delay", 5000000, "-avoid_negative_ts", "disabled", "-copyts", "-start_at_zero"]
 
     def get_output_format_params(self, options):
-        # TODO DASH support
-        return ["-f", "hls", "-segment_list_flags", "+live", "-hls_segment_type", "fmp4", "-hls_list_size", 0, "-segment_list_type", "m3u8", "-segment_time", options.segment_duration]
+        params = []
+
+        if options.format == "dash":
+            params += ["-f", "dash", "-window_size", 0, "-cluster_time_limit", options.segment_duration]
+        else:
+            container = "fmp4"
+            if options.container == "mpegts" or options.container == "ts":
+                container = "mpegts"
+
+            params += ["-f", "hls", "-hls_segment_type", container, "-hls_list_size", 0, "-segment_list_type", "m3u8", "-segment_time", options.segment_duration]
+
+        params += ["-segment_list_flags", "+live"]
+        return params
 
     def get_audio_params(self, options):
         if options.audio_codec == "copy" or not options.audio_codec:
@@ -205,7 +218,7 @@ class Transcoder(object):
         encoder = None
         if options.video_codec in self.encoders:
             encoder = self.encoders[options.video_codec][0]
-        
+
         params = ["-codec:v", encoder]
         # target 90% of the specified bitrate and limit the bitrate to the one specified
         # it avoids a CBR stream and allows to be a bit under the targeted bitrate,
