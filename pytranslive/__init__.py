@@ -72,7 +72,7 @@ class TranscodeOptions(object):
         # this assumes that track 0 & 1 are the one transcoded
         # you can use ffprobe to know the track numbers and specify here at most 3 tracks,
         # one for each stream type (video, audio, subtitles)
-        self.tracks_to_transcode = [0, 1]
+        self.selected_tracks = [0, 1]
 
 class Transcoder(object):
 
@@ -101,22 +101,26 @@ class Transcoder(object):
 
         # self.tone_mapper = "opencl"
 
-    def transcode(self, input_url, output_dir, output_filename="stream.m3u8", options=TranscodeOptions()):
-        input_url = input_url.replace(" ", "%20")
+    def transcode(self, output_dir, output_filename="stream.m3u8", options=TranscodeOptions(), *input_urls):
 
         params = self.get_hwaccel_params(options)
 
-        params += ["-i", input_url]
+        for url in input_urls:
+            url.replace(" ", "%20")
+            params += ["-i", url]
 
-        for track in options.tracks_to_transcode:
-            params += ["-map", "0:" + str(track)]
+        for track in options.selected_tracks:
+            track = str(track)
+            if not ":" in track:
+                "0:" + track
+            params += ["-map", track]
 
         params += ["-threads", 0, "-map_metadata", -1, "-map_chapters", -1]
 
         if options.time:
             params += ["-ss", options.time]
 
-        params += self.get_format_params(options)
+        params += self.get_output_format_params(options)
         params += self.get_timestamp_params(options)
 
         params += self.get_video_encoder_params(options)
@@ -138,7 +142,7 @@ class Transcoder(object):
     def get_timestamp_params(self, options):
         return ["-max_delay", 5000000, "-avoid_negative_ts", "disabled", "-copyts", "-start_at_zero"]
 
-    def get_format_params(self, options):
+    def get_output_format_params(self, options):
         # TODO DASH support
         return ["-f", "hls", "-segment_list_flags", "+live", "-hls_segment_type", "fmp4", "-hls_list_size", 0, "-segment_list_type", "m3u8", "-segment_time", options.segment_duration]
 
