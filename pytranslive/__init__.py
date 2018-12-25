@@ -76,6 +76,8 @@ class TranscodeOptions(object):
         self.audio_codec = "aac" # can be copy
         self.audio_profile = None # optional, most common profile will be used in this case
 
+        self.stereo_downmix = False
+
         self.time = None
         self.duration = None
 
@@ -195,7 +197,8 @@ class Transcoder(object):
             if profile:
                 params += ["-profile:a", profile]
 
-            # TODO channels
+            if options.stereo_downmix:
+                params += ["-ac", 2, "-clev", "3dB", "-slev", "-3dB"]
 
             return params
 
