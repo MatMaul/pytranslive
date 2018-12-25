@@ -96,6 +96,9 @@ class Transcoder(object):
             "vaapi": "scale_vaapi",
         }
 
+        # TODO probe ffmpeg -decoders
+        self.libfdkaac_supported = False
+
         # self.tone_mapper = "opencl"
 
     def transcode(self, input_url, output_dir, output_filename="stream.m3u8", options=TranscodeOptions()):
@@ -140,8 +143,31 @@ class Transcoder(object):
         return ["-f", "hls", "-segment_list_flags", "+live", "-hls_segment_type", "fmp4", "-hls_list_size", 0, "-segment_list_type", "m3u8", "-segment_time", options.segment_duration]
 
     def get_audio_params(self, options):
-        # TODO
-        return ["-codec:a", "copy"]
+        if options.audio_codec == "copy" or not options.audio_codec:
+            return ["-codec:a", "copy"]
+        else:
+            params = []
+
+            params += ["-b:a", options.audio_bitrate]
+
+            codec = options.audio_codec
+            if codec == "aac" and self.libfdkaac_supported:
+                codec = "libfdkaac"
+
+            params += ["-codec:a", codec]
+
+            profile = options.audio_profile
+            # ffmpeg internal aac encoder only supports LC profile
+            if profile and codec == "aac" and not self.libfdkaac_supported:
+                    profile = None
+
+            if profile:
+                params += ["-profile:a", profile]
+
+            # TODO channels
+
+            return params
+
 
     def get_subtitle_params(self, options):
         # TODO
