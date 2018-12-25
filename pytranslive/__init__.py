@@ -18,9 +18,9 @@ class TranscodeJob(object):
     def start(self):
         self.is_running = True
         print(self.ffmpeg_cmd)
-        self.process = subprocess.Popen(self.ffmpeg_cmd)#, stderr=subprocess.PIPE)
+        self.process = subprocess.Popen(self.ffmpeg_cmd, stderr=subprocess.PIPE)
 
-        #Thread(target=self.handle_process_output).start()
+        Thread(target=self.handle_process_output).start()
 
     def handle_process_output(self):
         for line in iter(self.process.stderr.readline, b''):
@@ -29,20 +29,24 @@ class TranscodeJob(object):
                 elem = elem.strip()
                 if elem.startswith("time="):
                     self.progress_time = elem[5:]
-                    print(self.progress_time)
 
         # wait for the process to end
         self.process.communicate()
         self.is_running = False
+        self.process = None
 
     def stop(self):
-        os.kill(self.process.pid, signal.SIGTERM)
-        time.sleep(1)
-        r = os.waitpid(self.process.pid, os.WNOHANG)
-        # process still not over, let's wait a bit and SIGKILL it
-        if r[0] == 0:
-            time.sleep(2)
-            os.kill(self.process.pid, signal.SIGKILL)
+        if self.process:
+            try:
+                os.kill(self.process.pid, signal.SIGTERM)
+                time.sleep(1)
+                r = os.waitpid(self.process.pid, os.WNOHANG)
+                # process still not over, let's wait a bit and SIGKILL it
+                if r[0] == 0:
+                    time.sleep(2)
+                    os.kill(self.process.pid, signal.SIGKILL)
+            except Exception:
+                pass
 
     def delete(self):
         self.stop()
@@ -101,7 +105,7 @@ class Transcoder(object):
 
         # self.tone_mapper = "opencl"
 
-    def transcode(self, output_dir, output_filename="stream.m3u8", options=TranscodeOptions(), *input_urls):
+    def get_transcode_job(self, output_dir, output_filename="stream.m3u8", options=TranscodeOptions(), *input_urls):
 
         params = self.get_hwaccel_params(options)
 
@@ -221,6 +225,9 @@ class Transcoder(object):
         return ["-vf", vf_str]
 
     def get_scaler_filter(self, options):
+        if not options.width and not options.height:
+            return None
+
         vf_str = ""
         
         width = options.width
