@@ -6,6 +6,8 @@ from threading import Thread
 import sys
 import time
 
+DEBUG = True
+
 class TranscodeJob(object):
 
     def __init__(self, ffmpeg_cmd, output_dir):
@@ -13,22 +15,30 @@ class TranscodeJob(object):
         self.output_dir = output_dir
         self.process = None
         self.progress_time = None
+        self.progress_speed = None
         self.is_running = False
 
     def start(self):
         self.is_running = True
-        print(self.ffmpeg_cmd)
+        if DEBUG:
+            print(self.ffmpeg_cmd)
         self.process = subprocess.Popen(self.ffmpeg_cmd, stderr=subprocess.PIPE)
 
         Thread(target=self.handle_process_output).start()
 
     def handle_process_output(self):
         for line in iter(self.process.stderr.readline, b''):
+            if DEBUG:
+                sys.stderr.write(line)
             elems = str(line).split(" ")
             for elem in elems:
                 elem = elem.strip()
                 if elem.startswith("time="):
                     self.progress_time = elem[5:]
+                if elem.startswith("speed="):
+                    s = elem[6:-1]
+                    if s:
+                        self.progress_speed = float(s)
 
         # wait for the process to end
         self.process.communicate()
