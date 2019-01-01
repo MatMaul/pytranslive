@@ -17,9 +17,8 @@ options.selected_tracks = ["0:0", "0:1", "0:4"]
 options.audio_codec = "aac"
 options.stereo_downmix = True
 options.width = 1280
-#options.height = 800
-options.video_bitrate = 8 * 1024 * 1024
 
+options.video_bitrate = 8 * 1024 * 1024
 
 options.format = "hls"
 

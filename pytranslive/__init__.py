@@ -91,7 +91,7 @@ class TranscodeOptions(object):
     def __init__(self):
         self.video_bitrate = 8388608 # 8mbps
         self.video_codec = "h264" # can be copy
-        self.video_profile = None # optional, most common profile will be used in this case
+        self.video_profile = None # optional, most common profile will be used in none case
         # if width or height is missing the AR will be used to calculate the missing one
         self.width = 1280
         self.height = None
@@ -118,6 +118,34 @@ class TranscodeOptions(object):
         # one for each stream type (video, audio, subtitles)
         self.selected_tracks = [0, 1]
 
+    def sanitize(self):
+        if not self.video_codec or not self.audio_codec:
+            raise Exception('Output video and audio codecs mandatory, can be "copy"')
+
+        self.video_codec = self.video_codec.strip().lower()
+        if self.video_codec == "h265":
+            self.video_codec = "hevc"
+        if self.video_codec == "avc":
+            self.video_codec = "h264"
+        self.audio_codec = self.audio_codec.strip().lower()
+
+        if self.format:
+            self.format = self.format.strip().lower()
+
+        if self.format == "hls":
+            if not self.container or self.container == "fmp4" or self.container == "mp4":
+                self.container = "fmp4"
+            elif self.container == "mpegts" or self.container == "ts":
+                self.container = "mpegts"
+            else:
+                raise Exception("HLS only supports TS and fMP4 containers")
+        if not self.container:
+            self.container = "matroska"
+        else:
+            self.container = self.container.strip().lower()
+            if self.container in ["mkv", "webm"]:
+                    self.container = "matroska"
+
 class Transcoder(object):
 
     def __init__(self, hwaccel_device=None):
@@ -138,21 +166,24 @@ class Transcoder(object):
         # self.tone_mapper = "opencl"
 
     def ffprobe(self, *input_urls):
-        ffprobe_cmd = ["ffprobe", "-threads", "0", "-print_format", "json", "-show_streams", "-show_chapters", "-show_format"]
+        result = {}
         for url in input_urls:
+            ffprobe_cmd = ["ffprobe", "-threads", "0", "-print_format", "json", "-show_streams", "-show_chapters", "-show_format"]
             ffprobe_cmd += [url.replace(" ", "%20")]
-
-        try:
-            res = subprocess.check_output(ffprobe_cmd)
-            return json.loads(res)
-        except Exception:
-            return None
+            try:
+                res = subprocess.check_output(ffprobe_cmd)
+                result[url] = json.loads(res)
+            except Exception:
+                pass
+        return result
 
     def get_transcode_job(self, output_dir, output_filename="stream.m3u8", options=TranscodeOptions(), *input_urls):
 
-        probe = self.ffprobe(*input_urls)
+        options.sanitize()
 
-        params = self.get_hwaccel_params(options, probe)
+        self.probe = self.ffprobe(*input_urls)
+
+        params = self.get_hwaccel_params(options, self.probe[input_urls[0]])
 
         for url in input_urls:
             url.replace(" ", "%20")
@@ -169,16 +200,15 @@ class Transcoder(object):
         if options.time:
             params += ["-ss", options.time]
 
-        #params += self.get_output_format_params(options, output_filename)
         params += self.get_timestamp_params(options)
 
-        if options.video_codec == "copy" or not options.video_codec:
+        if options.video_codec == "copy":
             params += ["-codec:v", "copy"]
         else:
             params += self.get_video_encoder_params(options)
             params += self.get_video_filter_params(options)
 
-        if options.audio_codec == "copy" or not options.audio_codec:
+        if options.audio_codec == "copy":
             params +=  ["-codec:a", "copy"]
         else:
             params += self.get_audio_params(options)
@@ -198,32 +228,24 @@ class Transcoder(object):
 
     def get_output_params(self, options, output_dir, output_filename):
         params = []
-        postprocess = None
 
         if options.format == "dash":
             params += ["-f", "dash", "-window_size", 0, "-cluster_time_limit", options.segment_duration]
             params += ["-segment_list_flags", "+live"]
         elif options.format == "hls":
-            if options.container == "mpegts" or options.container == "ts":
-                options.container = "mpegts"
-            else:
-                options.container = "fmp4"
-
             params += ["-f", "hls", "-hls_segment_type", options.container, "-hls_playlist_type", "event", "-segment_list_type", "m3u8"]
             params += ["-segment_list_flags", "+live"]
             params += ["-segment_start_number", 0, "-segment_time", options.segment_duration, "-segment_time_delta", 0.05]
             params += ["-master_pl_name", output_filename]
-        else:
-            if options.container in ["mkv", "webm"]:
-                options.container = "matroska"
-            params += ["-f", options.container]
 
-
-        if options.format == "hls":
+            # the output filename is used for the master playlist,
+            # let's add _out to the name for the main track
             dot = output_filename.rfind('.')
             name = output_filename[:dot]
             ext = output_filename[dot+1:]
             output_filename = "{}_out.{}".format(name, ext)
+        else:
+            params += ["-f", options.container]
 
         params += ["-y", output_dir + os.sep + output_filename]
         return params
@@ -306,9 +328,8 @@ class Transcoder(object):
         return params
 
     def get_video_encoder_params(self, options):
-        encoder = self.get_video_encoder(options)
+        params = ["-codec:v", self.get_video_encoder(options)]
 
-        params = ["-codec:v", encoder]
         # target 90% of the specified bitrate and limit the bitrate to the one specified
         # it avoids a CBR stream and allows to be a bit under the targeted bitrate,
         # it should helps some cases where the client bandwidth is fluctuating
